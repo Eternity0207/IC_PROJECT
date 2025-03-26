@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <winsock2.h>
 #include <string.h>
+#include <ws2tcpip.h>
 
 #define PORT 8080
 
@@ -97,7 +98,7 @@ int main(void)
 
     serv.sin_family = AF_INET;
     serv.sin_port = htons(PORT);
-    serv.sin_addr.s_addr = INADDR_ANY;
+    InetPtonA(AF_INET, "172.31.121.208", &serv.sin_addr);
     memset(&serv.sin_zero, 0, 8);
 
     int err = bind(listener, (struct sockaddr *)&serv, sizeof(serv));

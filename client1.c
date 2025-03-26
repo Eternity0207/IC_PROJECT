@@ -16,18 +16,18 @@ void addMessage(const char *message, int isSent);
 HWND hwndMain, hwndChatArea, hwndInputBox, hwndSendButton;
 SOCKET client_socket;
 char messageBuffer[BUFFER_SIZE];
-int messageY = 10;
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
     WNDCLASS wc = {0};
     wc.lpfnWndProc = WindowProc;
     wc.hInstance = hInstance;
     wc.lpszClassName = "ChatClient";
-    wc.hbrBackground = (HBRUSH)(COLOR_WINDOW+1);
+    wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
     wc.hCursor = LoadCursor(NULL, IDC_ARROW);
     RegisterClass(&wc);
     
-    hwndMain = CreateWindow("ChatClient", "Client 2 Chat", WS_OVERLAPPEDWINDOW, 100, 100, 500, 500, NULL, NULL, hInstance, NULL);
+    hwndMain = CreateWindow("ChatClient", "Client 1 Chat", WS_OVERLAPPEDWINDOW, 
+                            100, 100, 500, 500, NULL, NULL, hInstance, NULL);
     ShowWindow(hwndMain, nCmdShow);
     
     WSADATA ws;
@@ -37,7 +37,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     struct sockaddr_in serv = {0};
     serv.sin_family = AF_INET;
     serv.sin_port = htons(PORT);
-    serv.sin_addr.s_addr = inet_addr("127.0.0.1");
+    serv.sin_addr.s_addr = inet_addr("YOUR_IP");
     
     if (connect(client_socket, (struct sockaddr *)&serv, sizeof(serv)) == SOCKET_ERROR) {
         MessageBox(NULL, "Failed to connect to server!", "Error", MB_OK);
@@ -61,14 +61,16 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
         case WM_CREATE:
-            hwndChatArea = CreateWindow("STATIC", "", WS_CHILD | WS_VISIBLE,
-                                        10, 10, 460, 350, hwnd, NULL, NULL, NULL);
+            hwndChatArea = CreateWindow("EDIT", "", WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_BORDER |
+                                        ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY,
+                                        10, 10, 460, 300, hwnd, NULL, NULL, NULL);
             
-            hwndInputBox = CreateWindow("EDIT", "", WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL,
-                                        10, 370, 360, 30, hwnd, NULL, NULL, NULL);
+            hwndInputBox = CreateWindow("EDIT", "", WS_CHILD | WS_VISIBLE | WS_BORDER | ES_MULTILINE | 
+                                        ES_AUTOVSCROLL,
+                                        10, 320, 360, 50, hwnd, NULL, NULL, NULL);
             
             hwndSendButton = CreateWindow("BUTTON", "Send", WS_CHILD | WS_VISIBLE,
-                                         380, 370, 90, 30, hwnd, (HMENU)1, NULL, NULL);
+                                          380, 320, 90, 50, hwnd, (HMENU)1, NULL, NULL);
             break;
         
         case WM_COMMAND:
@@ -77,7 +79,11 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
 
         case WM_NEW_MESSAGE: {
             char *msgText = (char *)wp;
-            addMessage(msgText, 0);
+            char formattedMsg[BUFFER_SIZE + 10];
+
+            sprintf(formattedMsg, "Friend: %s", msgText);
+            addMessage(formattedMsg, 0);
+            
             free(msgText);
             break;
         }
@@ -98,6 +104,7 @@ void *receiveMessages(void *arg) {
         memset(buffer, 0, sizeof(buffer));
         int status = recv(client_socket, buffer, sizeof(buffer) - 1, 0);
         if (status <= 0) break;
+
         PostMessage(hwndMain, WM_NEW_MESSAGE, (WPARAM)strdup(buffer), 0);
     }
     return NULL;
@@ -106,18 +113,24 @@ void *receiveMessages(void *arg) {
 void sendMessage() {
     GetWindowText(hwndInputBox, messageBuffer, BUFFER_SIZE);
     if (strlen(messageBuffer) == 0) return;
+
     send(client_socket, messageBuffer, strlen(messageBuffer), 0);
-    addMessage(messageBuffer, 1);
+    
+    char formattedMsg[BUFFER_SIZE + 10];
+    sprintf(formattedMsg, "You: %s", messageBuffer);
+    
+    addMessage(formattedMsg, 1);
     SetWindowText(hwndInputBox, "");
 }
 
 void addMessage(const char *message, int isSent) {
-    HWND hwndMessage = CreateWindow("STATIC", message, WS_CHILD | WS_VISIBLE | SS_LEFT | WS_BORDER,
-                                    isSent ? 250 : 10, messageY, 200, 30, hwndChatArea, NULL, NULL, NULL);
+    char currentText[BUFFER_SIZE * 10] = {0};
+    GetWindowText(hwndChatArea, currentText, sizeof(currentText));
+
+    char newText[BUFFER_SIZE * 10];
+    sprintf(newText, "%s\r\n%s", currentText, message);
+
+    SetWindowText(hwndChatArea, newText);
     
-    HFONT hFont = CreateFont(16, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
-                             CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY, DEFAULT_PITCH | FF_SWISS, "Arial");
-    SendMessage(hwndMessage, WM_SETFONT, (WPARAM)hFont, TRUE);
-    
-    messageY += 40;
+    SendMessage(hwndChatArea, WM_VSCROLL, SB_BOTTOM, 0);
 }
