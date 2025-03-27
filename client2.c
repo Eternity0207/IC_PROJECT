@@ -47,7 +47,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     struct sockaddr_in serv = {0};
     serv.sin_family = AF_INET;
     serv.sin_port = htons(PORT);
-    serv.sin_addr.s_addr = inet_addr("10.24.2.227");
+    serv.sin_addr.s_addr = inet_addr("SERVER_IP");
     
     if (connect(client_socket, (struct sockaddr *)&serv, sizeof(serv)) == SOCKET_ERROR) {
         MessageBox(NULL, "Failed to connect to server!", "Error", MB_OK);
