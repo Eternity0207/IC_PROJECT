@@ -13,8 +13,6 @@ int maxFd = 0;
 int client[2] = {0, 0};
 fd_set fr;
 
-int msgCount[2] = {0, 0};
-
 void acceptConnection() {
     int clientSocket = accept(listener, NULL, NULL);
     if (clientSocket < 0) {
@@ -85,7 +83,7 @@ int main(void) {
 
     serv.sin_family = AF_INET;
     serv.sin_port = htons(PORT);
-    InetPtonA(AF_INET, "SERVER_IP", &serv.sin_addr); // Use InetPtonA for IP address conversion
+    InetPtonA(AF_INET, "YOUR_IP", &serv.sin_addr); // Use InetPtonA for IP address conversion
     memset(&serv.sin_zero, 0, sizeof(serv.sin_zero));
 
     int err = bind(listener, (struct sockaddr *)&serv, sizeof(serv));
