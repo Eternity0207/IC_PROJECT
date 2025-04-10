@@ -7,6 +7,6 @@
 void aesEncrypt(unsigned char *data, int dataLen, unsigned char *key, unsigned char *output);
 
 // Decrypt data using AES
-void aesDecrypt(unsigned char *data, int dataLen, unsigned char *key, unsigned char *output);
+int aesDecrypt(unsigned char *data, int dataLen, unsigned char *key, unsigned char *output);
 
 #endif
