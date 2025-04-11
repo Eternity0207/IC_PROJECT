@@ -7,13 +7,11 @@
 #include "aes.h"
 #include "auth.h"
 
-// Updated key size to match new implementation
 #define DH_KEY_SIZE 256  
 #define PORT 8080
 #define BUFFER_SIZE 4096  
 #define WM_NEW_MESSAGE (WM_USER + 1)
 
-// Global variables for cryptography
 unsigned char privateKey[DH_KEY_SIZE];
 unsigned char publicKey[DH_KEY_SIZE];
 unsigned char sharedSecret[DH_KEY_SIZE];
@@ -21,11 +19,9 @@ int keyExchangeComplete = 0;
 int keySent = 0;
 int keyRecieved = 0;
 
-// Authentication globals
 int isLoggedIn = 0;
 char currentUsername[50] = {0};
 
-// Window handles
 HWND hwndMain, hwndChatArea, hwndInputBox, hwndSendButton;
 HWND hwndLogin, hwndUsername, hwndPassword, hwndLoginButton, hwndSignupButton;
 
@@ -91,11 +87,11 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         }
 
         case WM_COMMAND:
-            if (LOWORD(wp) == 1) { // Login button
+            if (LOWORD(wp) == 1) { 
                 TryLogin();
-            } else if (LOWORD(wp) == 2) { // Signup button
+            } else if (LOWORD(wp) == 2) { 
                 TrySignup();
-            } else if (LOWORD(wp) == 3) { // Send button
+            } else if (LOWORD(wp) == 3) { 
                 sendMessage();
             }
             break;
@@ -130,12 +126,10 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
 }
 
 void ShowLoginWindow(HWND hwnd) {
-    // Destroy chat controls if they exist
     if (IsWindow(hwndChatArea)) DestroyWindow(hwndChatArea);
     if (IsWindow(hwndInputBox)) DestroyWindow(hwndInputBox);
     if (IsWindow(hwndSendButton)) DestroyWindow(hwndSendButton);
 
-    // Create login controls
     CreateWindow("STATIC", "Username:", WS_CHILD | WS_VISIBLE,
                  50, 50, 80, 25, hwnd, NULL, NULL, NULL);
     
@@ -252,16 +246,11 @@ void ConnectToServer() {
         return;
     }
 
-    // Generate DH key pair after successful connection
     generateDHKeyPair(privateKey, publicKey);
 
-    // Start receive thread
     pthread_t recvThread;
     pthread_create(&recvThread, NULL, receiveMessages, NULL);
 }
-
-
-// ... [keep all your existing receiveMessages, sendMessage, and addMessage functions unchanged] ...
 
 void *receiveMessages(void *arg) {
     char buffer[BUFFER_SIZE * 2];
