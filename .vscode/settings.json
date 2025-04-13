@@ -3,7 +3,9 @@
     "ostream": "cpp",
     "iostream": "cpp",
     "winsock2.h": "c",
-    "stdio.h": "c"
+    "stdio.h": "c",
+    "b24ee1007_b24cs1023_b24cm1031_b24cm1050_b24ch1047_aes.h": "c",
+    "b24ee1007_b24cs1023_b24cm1031_b24cm1050_b24ch1047_auth.h": "c"
   },
   "C_Cpp.errorSquiggles": "disabled",
   "C_Cpp_Runner.cCompilerPath": "gcc",

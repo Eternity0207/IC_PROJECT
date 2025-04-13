@@ -3,9 +3,9 @@
 #include <stdio.h>
 #include <string.h>
 #include <pthread.h>
-#include "diffie_hellman.h"
-#include "aes.h"
-#include "auth.h"
+#include "B24EE1007_B24CS1023_B24CM1031_B24CM1050_B24CH1047_diffie_hellman.h"
+#include "B24EE1007_B24CS1023_B24CM1031_B24CM1050_B24CH1047_aes.h"
+#include "B24EE1007_B24CS1023_B24CM1031_B24CM1050_B24CH1047_auth.h"
 
 #define DH_KEY_SIZE 256  
 #define WM_AUTH_RESULT (WM_USER + 2)
