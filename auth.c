@@ -13,8 +13,8 @@ int validateCredentials(const char *username, const char *password) {
         return 0;
     }
     
-    for (size_t i = 0; i < strlen(username); i++) {
-        if (username[i] == ':' || username[i] == '\n' || username[i] == '\r') {
+    for (int i = 0; i < strlen(username); i++) {
+        if (username[i] == ':' || username[i] == '\n') {
             return 0;
         }
     }
@@ -100,7 +100,7 @@ void initializeAuthSystem() {
         fclose(file);
         
         if (size == 0) {
-            registerUser("admin", "admin123");
+            registerUser("teamx", "icproject");
         }
     }
 }
