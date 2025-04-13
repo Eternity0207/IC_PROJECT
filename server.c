@@ -1,17 +1,15 @@
-#define _WIN32_WINNT 0x0600  // Must be first line for Windows compatibility
+#define _WIN32_WINNT 0x0600
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 #include<stdbool.h>
-
-
+#define DATABASE_FILE "users.dat"
 #define PORT 8080
 #define BUFFER_SIZE 4096
-#define MAX_CLIENTS 100
+#define MAX_CLIENTS 2
 
-// Forward declarations
 typedef struct ClientNode ClientNode;
 
 struct ClientNode {
@@ -21,23 +19,46 @@ struct ClientNode {
     ClientNode *next;
 };
 
-// Global variables
+typedef struct User{
+    char username[20];
+    char password[20];
+    struct User * next;
+} User;
+
 ClientNode *client_list = NULL;
 SOCKET listener = INVALID_SOCKET;
 fd_set master_fd_set;
 SOCKET max_fd = 0;
 
-// Function prototypes
 void add_client(SOCKET socket, const char *ip);
+void free_users(User* head);
 void remove_client(SOCKET socket);
 ClientNode *find_client_by_ip(const char *ip);
 ClientNode *find_client_by_socket(SOCKET socket);
-void handle_ip_request(SOCKET sender_socket, const char *requested_ip);
 void forward_message(SOCKET sender_socket, const char *msg, int msg_len);
 void accept_new_connection();
-void handle_client_message(SOCKET client_socket);
+bool verify(User *head, const char *username, const char *password);
+void adduser(User **head, const char *username, const char *password);
+void handle_client_message(SOCKET client_socket, User** users);
+void save_to_database(User* user);
+User* load_database(User* initial_head);
+User* finduser(User *head, const char *username);
+User* create_newUser(const char *username, const char *password);
 
 void add_client(SOCKET socket, const char *ip) {
+    int client_count = 0;
+    ClientNode *current = client_list;
+    while (current != NULL) {
+        client_count++;
+        current = current->next;
+    }
+    
+    if (client_count >= MAX_CLIENTS) {
+        send(socket, "SERVER_FULL", 12, 0);
+        closesocket(socket);
+        return;
+    }
+
     ClientNode *new_node = (ClientNode *)malloc(sizeof(ClientNode));
     if (new_node == NULL) {
         printf("Memory allocation failed\n");
@@ -56,6 +77,20 @@ void add_client(SOCKET socket, const char *ip) {
     }
 
     printf("New client connected: %s\n", ip);
+    
+    if (client_count == 1) {
+        ClientNode *first = client_list->next;
+        ClientNode *second = client_list;
+        
+        first->paired_socket = second->socket;
+        second->paired_socket = first->socket;
+        
+        send(first->socket, "PAIRED", 7, 0);
+        send(second->socket, "PAIRED", 7, 0);
+        printf("Clients paired: %s and %s\n", first->ip, second->ip);
+    } else {
+        send(socket, "WAITING_FOR_PARTNER", 20, 0);
+    }
 }
 
 void remove_client(SOCKET socket) {
@@ -114,28 +149,13 @@ ClientNode *find_client_by_socket(SOCKET socket) {
     return NULL;
 }
 
-void handle_ip_request(SOCKET sender_socket, const char *requested_ip) {
-    ClientNode *sender = find_client_by_socket(sender_socket);
-    if (sender == NULL) return;
-    
-    ClientNode *target = find_client_by_ip(requested_ip);
-    
-    if (target != NULL && target != sender && target->paired_socket == INVALID_SOCKET) {
-        sender->paired_socket = target->socket;
-        target->paired_socket = sender->socket;
-        
-        send(sender_socket, "IP_FOUND", 8, 0);
-        send(target->socket, "IP_FOUND", 8, 0);
-        
-        printf("Clients paired: %s <-> %s\n", sender->ip, target->ip);
-    } else {
-        send(sender_socket, "IP_NOT_FOUND", 12, 0);
-    }
-}
-
 void forward_message(SOCKET sender_socket, const char *msg, int msg_len) {
     ClientNode *sender = find_client_by_socket(sender_socket);
-    if (sender == NULL || sender->paired_socket == INVALID_SOCKET) return;
+    if (sender == NULL || sender->paired_socket == INVALID_SOCKET) {
+        const char *waitmsg = "[WAITING] There is no one on other side to chat yet!";
+        send(sender_socket, waitmsg, strlen(waitmsg), 0);
+        return;
+    }
     
     send(sender->paired_socket, msg, msg_len, 0);
 }
@@ -159,12 +179,9 @@ void accept_new_connection() {
     
     add_client(new_socket, client_ip);
     FD_SET(new_socket, &master_fd_set);
-    
-    const char *welcome_msg = "Welcome! Send the IP address of the client you want to connect to in the format: IP_Address:xxx.xxx.xxx.xxx";
-    send(new_socket, welcome_msg, strlen(welcome_msg), 0);
 }
 
-void handle_client_message(SOCKET client_socket) {
+void handle_client_message(SOCKET client_socket, User** users) {
     char buffer[BUFFER_SIZE];
     int bytes_received = recv(client_socket, buffer, BUFFER_SIZE - 1, 0);
     
@@ -180,37 +197,64 @@ void handle_client_message(SOCKET client_socket) {
     ClientNode *client = find_client_by_socket(client_socket);
     if (client == NULL) return;
     
-    if (client->paired_socket == INVALID_SOCKET) {
-        if (strncmp(buffer, "IP_Address:", 11) == 0) {
-            char requested_ip[INET6_ADDRSTRLEN];
-            strncpy(requested_ip, buffer + 11, INET6_ADDRSTRLEN - 1);
-            requested_ip[INET6_ADDRSTRLEN - 1] = '\0';
-            handle_ip_request(client_socket, requested_ip);
+    if (strncmp(buffer, "LOGIN", 5) == 0) {
+        char username[50], password[50];
+        sscanf(buffer + 6, "%s %s", username, password);
+        printf("New Login Request, Usename:%s Password:%s\n", username, password);
+        bool auth_result = verify(*users, username, password);
+        printf("Authentication result: %s\n", auth_result ? "SUCCESS" : "FAILURE");
+        if (auth_result) {
+            send(client_socket, "LOGIN_SUCCESS", 14, 0);
+        } else {
+            send(client_socket, "LOGIN_FAILED", 13, 0);
         }
-    } else {
+    }
+    else if (strncmp(buffer, "SIGNUP", 6) == 0) {
+        char username[50], password[50];
+        sscanf(buffer + 7, "%s %s", username, password);
+        printf("New Signup Request, Usename:%s Password:%s\n", username, password);
+        
+        if (!finduser(*users, username)) {
+            adduser(users, username, password);
+            printf("SIGNUP result: %s\n", "SUCCESS");
+            save_to_database(create_newUser(username, password));
+
+            *users = load_database(*users);
+            send(client_socket, "SIGNUP_SUCCESS", 14, 0);
+        } else {
+            send(client_socket, "SIGNUP_FAILED", 13, 0);
+            printf("SIGNUP result: %s\n", "FAILURE");
+        }
+    }
+    else {
         forward_message(client_socket, buffer, bytes_received);
     }
 }
-/// hellooooooooooooooooooooo
-typedef struct User{
-    char username[20];
-    char password[20];
-    struct User * next;
-} User;
 
 void save_to_database(User* user) {
+    printf("Attempting to save user: %s\n", user->username);
     FILE* file = fopen(DATABASE_FILE, "ab");
     if (!file) {
         perror("Failed to open database file");
+        printf("Error: %s\n", strerror(errno));
         return;
     }
-    fwrite(user, sizeof(User), 1, file);
+    size_t written = fwrite(user, sizeof(User), 1, file);
+    if (written != 1) {
+        printf("Failed to write user to database\n");
+        perror("Error");
+    } else {
+        printf("Successfully saved user: %s\n", user->username);
+    }
     fclose(file);
 }
 
-User* load_database() {
+User* load_database(User* existing_head) {
+    free_users(existing_head);
+
     FILE* file = fopen(DATABASE_FILE, "rb");
     if (!file) {
+        printf("No existing database file found\n");
         return NULL;
     }
 
@@ -218,8 +262,7 @@ User* load_database() {
     User temp;
 
     while (fread(&temp, sizeof(User), 1, file) == 1) {
-        User* new_user = malloc(sizeof(User));
-        *new_user = temp;
+        User* new_user = create_newUser(temp.username, temp.password);
         new_user->next = head;
         head = new_user;
     }
@@ -228,47 +271,45 @@ User* load_database() {
     return head;
 }
 
-
-
-User * create_newUser(const char * username, const char * password){
-    User * newUser=(User*)malloc(sizeof(User)); // allocating memory in heap for new user
-    strncpy(newUser->username,username,sizeof(newUser->username));
-    strncpy(newUser->password,password,sizeof(newUSer->password));
-    newUser->next=NULL;
-
+User* create_newUser(const char *username, const char *password) {
+    User *newUser = (User*)malloc(sizeof(User));
+    strncpy(newUser->username, username, sizeof(newUser->username) - 1);
+    strncpy(newUser->password, password, sizeof(newUser->password) - 1);
+    newUser->username[sizeof(newUser->username) - 1] = '\0';
+    newUser->password[sizeof(newUser->password) - 1] = '\0';
+    newUser->next = NULL;
     return newUser;
 }
 
 void adduser(User **head, const char * username , const char * password){
     User * newUser = create_newUser(username,password);
     newUser->next= *head;
-    *head= newUSer;
+    *head= newUser;
 }
 
-User * finduser(User * head , const char * username){
-    User * current = head;
-    while(current != NULL){
-        if(strncmp(current->username,username)==0){
-            return current ;
+User* finduser(User *head, const char *username) {
+    User *current = head;
+    while(current != NULL) {
+        if(strncmp(current->username, username, sizeof(current->username)) == 0) {
+            return current;
         }
-
-        current = current -> next;
+        current = current->next;
     }
-
     return NULL;
-
 }
 
-bool verify(User * head, const char * username, const char * password){
-    User * user= finduser(head,username);
-
-    if(user==NULL){
-        return NULL;
+bool verify(User *head, const char *username, const char *password) {
+    User *user = finduser(head, username);
+    if(user == NULL) {
+        printf("User '%s' not found\n", username);
+        return false;
     }
-
-    return strcmp(user->password,password)==0 ;
+    printf("Stored password: '%s'\n", user->password);
+    printf("Provided password: '%s'\n", password);
+    printf("Comparison result: %d\n", strcmp(user->password, password));
+    
+    return strcmp(user->password, password) == 0;
 }
-
 
 void free_users(User* head) {
     User* current = head;
@@ -279,16 +320,10 @@ void free_users(User* head) {
     }
 }
 
-//////okppppppppp
-
 int main(void) {
-
-
-
-    User* users = load_database();
+    User* users = load_database(NULL);
     if (!users) {
         printf("No existing database, starting fresh\n");
-        // Add some default users if needed
         adduser(&users, "admin", "admin123");
     }
 
@@ -336,25 +371,6 @@ int main(void) {
     max_fd = listener;
     
     while (1) {
-
-        char username[50], password[50];
-        
-        
-        recv(client_socket, username, sizeof(username), 0);
-        recv(client_socket, password, sizeof(password), 0);
-        
-       
-        bool result = verify(users, username, password);
-        
-       
-        if (result) {
-            send(client_socket, "Login successful", 16, 0);
-            printf("User %s logged in\n", username);
-        } else {
-            send(client_socket, "Login failed", 12, 0);
-            printf("Failed login for %s\n", username);
-        }
-
         fd_set read_fds = master_fd_set;
         int socket_count = select(0, &read_fds, NULL, NULL, NULL);
         
@@ -368,7 +384,7 @@ int main(void) {
                 if (i == listener) {
                     accept_new_connection();
                 } else {
-                    handle_client_message(i);
+                    handle_client_message(i, &users);
                 }
             }
         }
