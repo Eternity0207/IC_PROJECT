@@ -16,6 +16,6 @@ int registerUser(const char *username, const char *password);
 int userExists(const char *username);
 int validateCredentials(const char *username, const char *password);
 void encryptPassword(char *password);
-void initializeAuthSystem();
+
 
 #endif

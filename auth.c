@@ -73,20 +73,3 @@ int registerUser(const char *username, const char *password) {
     
     return result == 1;
 }
-
-void initializeAuthSystem() {
-    FILE *file = fopen(USERS_FILE, "ab");
-    if (file) {
-        fclose(file);
-    }
-    file = fopen(USERS_FILE, "rb");
-    if (file) {
-        fseek(file, 0, SEEK_END);
-        long size = ftell(file);
-        fclose(file);
-        
-        if (size == 0) {
-            registerUser("teamx", "icproject");
-        }
-    }
-}
