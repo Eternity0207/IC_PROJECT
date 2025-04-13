@@ -1,4 +1,4 @@
-# Messenger App
+# Whispr — Speak Securely, Stay Private
 
 A minimalist messenger application that enables secure communication between two IP addresses. The app incorporates **Diffie-Hellman Key Exchange** for secure key sharing and **AES-256 encryption** for message confidentiality. It also features a simple and intuitive GUI for ease of use.
 
