@@ -8,6 +8,7 @@
 #include "auth.h"
 
 #define DH_KEY_SIZE 256  
+#define WM_AUTH_RESULT (WM_USER + 2)
 #define PORT 8080
 #define BUFFER_SIZE 4096  
 #define WM_NEW_MESSAGE (WM_USER + 1)
@@ -21,6 +22,11 @@ int keyRecieved = 0;
 
 int isLoggedIn = 0;
 char currentUsername[50] = {0};
+typedef struct {
+    char username[50];
+    char password[50];
+    int isLogin;
+} AuthData;
 
 HWND hwndMain, hwndChatArea, hwndInputBox, hwndSendButton;
 HWND hwndLogin, hwndUsername, hwndPassword, hwndLoginButton, hwndSignupButton;
@@ -28,7 +34,6 @@ HWND hwndLogin, hwndUsername, hwndPassword, hwndLoginButton, hwndSignupButton;
 SOCKET client_socket;
 char messageBuffer[BUFFER_SIZE];
 
-// Function prototypes
 LRESULT CALLBACK WindowProc(HWND, UINT, WPARAM, LPARAM);
 void *receiveMessages(void *arg);
 void sendMessage();
@@ -39,7 +44,36 @@ void TryLogin();
 void TrySignup();
 void ConnectToServer();
 
+DWORD WINAPI AuthThread(LPVOID lpParam) {
+    AuthData *data = (AuthData *)lpParam;
+    char buffer[BUFFER_SIZE];
+    int responseLen;
+
+    if (data->isLogin) {
+        sprintf(buffer, "LOGIN %s %s", data->username, data->password);
+    } else {
+        sprintf(buffer, "SIGNUP %s %s", data->username, data->password);
+    }
+
+    send(client_socket, buffer, strlen(buffer), 0);
+    responseLen = recv(client_socket, buffer, sizeof(buffer) - 1, 0);
+
+    if (responseLen > 0) {
+        buffer[responseLen] = '\0';
+        char *result = _strdup(buffer);
+        if (data->isLogin && strcmp(result, "LOGIN_SUCCESS") == 0) {
+            strncpy(currentUsername, data->username, sizeof(currentUsername) - 1);
+            currentUsername[sizeof(currentUsername) - 1] = '\0'; 
+        }
+        PostMessage(hwndMain, WM_AUTH_RESULT, (WPARAM)data->isLogin, (LPARAM)result);
+    }
+
+    free(data);
+    return 0;
+}
+
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
+    ConnectToServer();
     WNDCLASS wc = {0};
     wc.lpfnWndProc = WindowProc;
     wc.hInstance = hInstance;
@@ -87,13 +121,17 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         }
 
         case WM_COMMAND:
+        if (isLoggedIn) {
+            if (LOWORD(wp) == 3) { 
+                sendMessage();
+            }
+        } else {
             if (LOWORD(wp) == 1) { 
                 TryLogin();
             } else if (LOWORD(wp) == 2) { 
                 TrySignup();
-            } else if (LOWORD(wp) == 3) { 
-                sendMessage();
             }
+        }
             break;
 
         case WM_NEW_MESSAGE: {
@@ -103,22 +141,47 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             break;
         }
 
-        case WM_KEYDOWN:
-            if (wp == VK_RETURN && isLoggedIn) {
-                if (GetKeyState(VK_SHIFT) & 0x8000) {
-                    int curPos = SendMessage(hwndInputBox, EM_GETSEL, 0, 0) & 0xFFFF;
-                    SendMessage(hwndInputBox, EM_REPLACESEL, TRUE, (LPARAM)"\r\n");
+        case WM_AUTH_RESULT: {
+            int isLogin = (int)wp;
+            char *response = (char *)lp;
+            
+            if (isLogin) {
+                if (strcmp(response, "LOGIN_SUCCESS") == 0) {
+                    isLoggedIn = 1;
+                    ShowChatWindow(hwndMain);
                 } else {
-                    sendMessage();
+                    MessageBox(hwndMain, "Invalid credentials", "Login Failed", MB_OK);
                 }
-                return 0;
+            } else {
+                if (strcmp(response, "SIGNUP_SUCCESS") == 0) {
+                    MessageBox(hwndMain, "Registration successful!", "Success", MB_OK);
+                } else {
+                    MessageBox(hwndMain, "Username exists", "Signup Failed", MB_OK);
+                }
+            }
+            
+            free(response);
+            break;
+        }
+        
+        case WM_KEYDOWN:
+            if (wp == VK_RETURN) {
+                if (isLoggedIn) {
+                    if (GetKeyState(VK_SHIFT) & 0x8000) {
+                        int curPos = SendMessage(hwndInputBox, EM_GETSEL, 0, 0) & 0xFFFF;
+                        SendMessage(hwndInputBox, EM_REPLACESEL, TRUE, (LPARAM)"\r\n");
+                    } else {
+                        sendMessage();
+                    }
+                    return 0;
+                }
             }
             break;
-
         case WM_DESTROY:
             PostQuitMessage(0);
             break;
 
+        
         default:
             return DefWindowProc(hwnd, msg, wp, lp);
     }
@@ -152,13 +215,11 @@ void ShowLoginWindow(HWND hwnd) {
 }
 
 void ShowChatWindow(HWND hwnd) {
-    // Destroy login controls
     if (IsWindow(hwndUsername)) DestroyWindow(hwndUsername);
     if (IsWindow(hwndPassword)) DestroyWindow(hwndPassword);
     if (IsWindow(hwndLoginButton)) DestroyWindow(hwndLoginButton);
     if (IsWindow(hwndSignupButton)) DestroyWindow(hwndSignupButton);
 
-    // Create chat controls
     hwndChatArea = CreateWindow("EDIT", "", 
                                WS_CHILD | WS_VISIBLE | WS_VSCROLL | 
                                ES_MULTILINE | ES_READONLY,
@@ -175,45 +236,22 @@ void ShowChatWindow(HWND hwnd) {
     char windowTitle[100];
     sprintf(windowTitle, "Secure Chat - %s", currentUsername);
     SetWindowText(hwndMain, windowTitle);
-    
-    // Connect to server after showing chat window
-    ConnectToServer();
 }
 
 void TryLogin() {
-    char username[50], password[50];
-    GetWindowText(hwndUsername, username, sizeof(username));
-    GetWindowText(hwndPassword, password, sizeof(password));
-
-    if (strlen(username) == 0 || strlen(password) == 0) {
-        MessageBox(hwndMain, "Please enter both username and password", "Error", MB_OK);
-        return;
-    }
-
-    if (authenticateUser(username, password)) {
-        isLoggedIn = 1;
-        strncpy(currentUsername, username, sizeof(currentUsername));
-        ShowChatWindow(hwndMain);
-    } else {
-        MessageBox(hwndMain, "Invalid username or password", "Login Failed", MB_OK);
-    }
+    AuthData *data = malloc(sizeof(AuthData));
+    GetWindowText(hwndUsername, data->username, sizeof(data->username));
+    GetWindowText(hwndPassword, data->password, sizeof(data->password));
+    data->isLogin = 1;
+    CreateThread(NULL, 0, AuthThread, data, 0, NULL);
 }
 
 void TrySignup() {
-    char username[50], password[50];
-    GetWindowText(hwndUsername, username, sizeof(username));
-    GetWindowText(hwndPassword, password, sizeof(password));
-
-    if (strlen(username) == 0 || strlen(password) == 0) {
-        MessageBox(hwndMain, "Please enter both username and password", "Error", MB_OK);
-        return;
-    }
-
-    if (registerUser(username, password)) {
-        MessageBox(hwndMain, "Registration successful! Please login.", "Success", MB_OK);
-    } else {
-        MessageBox(hwndMain, "Username already exists", "Registration Failed", MB_OK);
-    }
+    AuthData *data = malloc(sizeof(AuthData));
+    GetWindowText(hwndUsername, data->username, sizeof(data->username));
+    GetWindowText(hwndPassword, data->password, sizeof(data->password));
+    data->isLogin = 0;
+    CreateThread(NULL, 0, AuthThread, data, 0, NULL);
 }
 
 void ConnectToServer() {
@@ -234,7 +272,7 @@ void ConnectToServer() {
     struct sockaddr_in serv = {0};
     serv.sin_family = AF_INET;
     serv.sin_port = htons(PORT);
-    serv.sin_addr.s_addr = inet_addr("172.31.80.93");  // Replace with your server IP
+    serv.sin_addr.s_addr = inet_addr("172.31.80.93");
 
     if (connect(client_socket, (struct sockaddr *)&serv, sizeof(serv)) == SOCKET_ERROR) {
         char msg[256];
