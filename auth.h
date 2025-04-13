@@ -18,4 +18,4 @@ int validateCredentials(const char *username, const char *password);
 void encryptPassword(char *password);
 void initializeAuthSystem();
 
-#endif // AUTH_H
+#endif
