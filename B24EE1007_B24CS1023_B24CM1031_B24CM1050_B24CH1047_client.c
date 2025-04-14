@@ -129,17 +129,15 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         }
 
         case WM_COMMAND:
-        if (isLoggedIn) {
-            if (LOWORD(wp) == 3) { 
+            if (LOWORD(wp) == 3 && HIWORD(wp) == BN_CLICKED && isLoggedIn) {  
                 sendMessage();
-            }
-        } else {
-            if (LOWORD(wp) == 1) { 
+            } 
+            else if (LOWORD(wp) == 1 && HIWORD(wp) == BN_CLICKED) {
                 TryLogin();
-            } else if (LOWORD(wp) == 2) { 
+            } 
+            else if (LOWORD(wp) == 2 && HIWORD(wp) == BN_CLICKED) {
                 TrySignup();
             }
-        }
             break;
 
         case WM_NEW_MESSAGE: {
@@ -157,8 +155,6 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 if (strcmp(response, "LOGIN_SUCCESS") == 0) {
                     isLoggedIn = 1;
                     ShowChatWindow(hwndMain);
-                } else {
-                    MessageBox(hwndMain, "Invalid credentials", "Login Failed", MB_OK);
                 }
             } else {
                 if (strcmp(response, "SIGNUP_SUCCESS") == 0) {
@@ -280,7 +276,7 @@ void ConnectToServer() {
     struct sockaddr_in serv = {0};
     serv.sin_family = AF_INET;
     serv.sin_port = htons(PORT);
-    serv.sin_addr.s_addr = inet_addr(""); // Enter IP Address of the server here
+    serv.sin_addr.s_addr = inet_addr("172.31.80.93"); // Enter IP Address of the server here
 
     if (connect(client_socket, (struct sockaddr *)&serv, sizeof(serv)) == SOCKET_ERROR) {
         char msg[256];
@@ -305,7 +301,11 @@ void *receiveMessages(void *arg) {
         memset(buffer, 0, sizeof(buffer));
         int status = recv(client_socket, buffer, sizeof(buffer) - 1, 0);
         if (status <= 0) break;
-        
+        printf("[DEBUG] Received: %s\n", buffer);
+
+        if (strstr(buffer, "INVALID_CREDENTIALS")) {
+            printf("[DEBUG] Server sent invalid creds, but we're logged in!\n");
+        }
         if ((strncmp(buffer, "DH_PUBKEY:", 10) == 0) && !keySent && !keyRecieved) {
             unsigned char otherPublicKey[DH_KEY_SIZE];
             memcpy(otherPublicKey, buffer + 10, DH_KEY_SIZE);
@@ -366,6 +366,9 @@ void *receiveMessages(void *arg) {
 }
 
 void sendMessage() {
+    char localBuffer[BUFFER_SIZE] = {0};
+    GetWindowText(hwndInputBox, localBuffer, BUFFER_SIZE);
+    if (strlen(localBuffer) == 0) return;
     GetWindowText(hwndInputBox, messageBuffer, BUFFER_SIZE);
     if (strlen(messageBuffer) == 0) return;
     
