@@ -11,10 +11,9 @@ Vibify is a minimalist messenger application that enables secure communication b
 
 ## Technologies Used
 
-- **Programming Language**: [Your chosen language, e.g., Python, Java]
+- **Programming Language**: C
 - **Encryption**: AES-256 and Diffie-Hellman Key Exchange
-- **GUI Framework**: [Your chosen framework, e.g., Tkinter, PyQt]
-
+- **GUI Framework**: Windows API (windows.h)
 ## How It Works
 
 1. **Key Exchange**: 
@@ -29,16 +28,28 @@ Vibify is a minimalist messenger application that enables secure communication b
 
 1. Clone the repository:
     ```bash
-    git clone https://github.com/yourusername/messenger-app.git
-    cd messenger-app
+    git clone https://github.com/Eternity0207/IC_PROJECT.git
+    cd IC_PROJECT
     ```
 2. Install dependencies:
     ```bash
-    [Add installation commands, e.g., pip install -r requirements.txt]
+    Install MSYS2
+    Install MinGW
+    64 via MSYS2
+    Install OpenSSL dependencies via MSYS2
+    Use these commands:
+    pacman -Syu
+    pacman -S mingw-w64-x86_64-gcc (To install gcc compiler)
+    pacman -S mingw-w64-x86_64-openssl (To install OpenSSL dependencies)
+    pacman -S make cmake git (To install build tools)
     ```
 3. Run the application:
     ```bash
-    [Add command to run the app, e.g., python app.py]
+    gcc server. c -0 server .exe -Iws2_32
+    ./server.exe
+    
+    gcc client.c diffie_hellnan.c aes.c auth.c -o client.exe -lssl -lws2_32 -Icrypto -lpthread -lgdi32
+    ./client.exe
     ```
 
 ## Usage
@@ -59,6 +70,6 @@ This project is licensed under the [MIT License](LICENSE).
 
 ## Acknowledgments
 
-- [Diffie-Hellman Key Exchange](https://en.wikipedia.org/wiki/Diffie%E2%80%93Hellman_key_exchange)
-- [AES Encryption](https://en.wikipedia.org/wiki/Advanced_Encryption_Standard)
-- [Your GUI framework documentation]
+- [Diffie-Hellman Key Exchange](https://github.com/nakov/Practical-Cryptography-for-Developers-Book/blob/master/key-exchange/diffie-hellman-key-exchange.md)
+- [AES Encryption](https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.197-upd1.pdf)
+- [Windows API (windows.h)](https://learn.microsoft.com/en-us/windows/win32/api/winbase/)
