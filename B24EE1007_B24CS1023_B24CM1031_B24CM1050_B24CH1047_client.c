@@ -16,13 +16,13 @@
 unsigned char privateKey[DH_KEY_SIZE];
 unsigned char publicKey[DH_KEY_SIZE];
 unsigned char sharedSecret[DH_KEY_SIZE];
-//Variables to track the progress of key exchage
 int keyExchangeComplete = 0;
 int keySent = 0;
 int keyRecieved = 0;
 
 int isLoggedIn = 0;
 char currentUsername[50] = {0};
+char friendUsername[50] = {0};
 typedef struct {
     char username[50];
     char password[50];
@@ -34,7 +34,7 @@ HWND hwndLogin, hwndUsername, hwndPassword, hwndLoginButton, hwndSignupButton;
 
 SOCKET client_socket;
 char messageBuffer[BUFFER_SIZE];
-
+int CalculateRightPadding(HWND hwndChatArea);
 LRESULT CALLBACK WindowProc(HWND, UINT, WPARAM, LPARAM);
 void *receiveMessages(void *arg);
 void sendMessage();
@@ -44,6 +44,13 @@ void ShowChatWindow(HWND hwnd);
 void TryLogin();
 void TrySignup();
 void ConnectToServer();
+
+int CalculateRightPadding(HWND hwndChatArea) {
+    RECT rect;
+    GetClientRect(hwndChatArea, &rect);
+    int windowWidth = rect.right - rect.left;
+    return windowWidth / 5;
+}
 
 DWORD WINAPI AuthThread(LPVOID lpParam) {
     AuthData *data = (AuthData *)lpParam;
@@ -291,156 +298,98 @@ void ConnectToServer() {
     pthread_create(&recvThread, NULL, receiveMessages, NULL);
 }
 
-//Function to Recive Meassages from another client
 void *receiveMessages(void *arg) {
-    //Create a buffer to hold incoming data
     char buffer[BUFFER_SIZE * 2];
     
     while (1) {
-        //Clear the buffer before receiving new data
         memset(buffer, 0, sizeof(buffer));
-        
-        //Receive data from the server/client
         int status = recv(client_socket, buffer, sizeof(buffer) - 1, 0);
-        
-        //If the status is <= 0, it means the connection was closed or there was an error
         if (status <= 0) break;
         
-        // Case 1: Handle the key exchange (public key sent from other client)
         if ((strncmp(buffer, "DH_PUBKEY:", 10) == 0) && !keySent && !keyRecieved) {
-            // Extract the other client's public key (assuming it's after "DH_PUBKEY:" in the buffer)
             unsigned char otherPublicKey[DH_KEY_SIZE];
             memcpy(otherPublicKey, buffer + 10, DH_KEY_SIZE);
-            
-            //Generate the shared secret using our private key and the other client's public key
             generateSharedSecret(sharedSecret, privateKey, otherPublicKey);
             
-            //Display a message indicating the key exchange was received
             addMessage("Received key exchange request...", 0);
             
-            //Create a message with our public key to send back to the other client
             char keyMsg[BUFFER_SIZE + DH_KEY_SIZE];
             sprintf(keyMsg, "DH_PUBKEY:");
-            memcpy(keyMsg + 10, publicKey, DH_KEY_SIZE); //Attach our public key after "DH_PUBKEY:"
-            
-            // Send our public key back to the other client
+            memcpy(keyMsg + 10, publicKey, DH_KEY_SIZE);
             send(client_socket, keyMsg, 10 + DH_KEY_SIZE, 0);
             
-            //Marking key sent and key recieved as true
             keySent = 1;
             keyRecieved = 1;
-            
-            //Inform the user that the secure connection is now established
             addMessage("Secure connection established!", 0);
         }
-        
-        //Case 2: Handle receiving the second public key (first key sent by us)
         else if ((strncmp(buffer, "DH_PUBKEY:", 10) == 0) && keySent && !keyRecieved) {
-            // Extract the other client's public key
             unsigned char otherPublicKey[DH_KEY_SIZE];
             memcpy(otherPublicKey, buffer + 10, DH_KEY_SIZE);
-            
-            //Generate the shared secret using our private key and the received public key
             generateSharedSecret(sharedSecret, privateKey, otherPublicKey);
             
-            // Inform the user that the second key exchange was received
             addMessage("Received key in return...", 0);
-            
-            //Marking key recieves as true
             keyRecieved = 1;
-            
-            // Inform the user that the secure connection is established
             addMessage("Secure connection established!", 0);
         }
-        
-        //Case 3: Handle encrypted messages after the key exchange has been completed
         else if (keySent && keyRecieved && strncmp(buffer, "ENC:", 4) == 0) {
-            //Extract the encrypted message from the buffer (it starts after "ENC:")
             unsigned char encryptedData[BUFFER_SIZE];
-            int encryptedLen = status - 4;  //The length of the encrypted data
+            int encryptedLen = status - 4;
+            memcpy(encryptedData, buffer + 4, encryptedLen);
             
-            memcpy(encryptedData, buffer + 4, encryptedLen);  //Copy the encrypted data
-            
-            //Decrypt the received message using the shared secret (AES decryption)
             unsigned char decryptedData[BUFFER_SIZE];
             int decryptedLen = aesDecrypt(encryptedData, encryptedLen, sharedSecret, decryptedData);
             
-            //If decryption was successful
             if (decryptedLen >= 0) {
-                decryptedData[decryptedLen] = '\0';  // Null-terminate the decrypted message
-                // Post the decrypted message to the main window for display
+                decryptedData[decryptedLen] = '\0';
                 PostMessage(hwndMain, WM_NEW_MESSAGE, (WPARAM)strdup((char*)decryptedData), 0);
             } else {
-                //If decryption failed, notify the user
                 PostMessage(hwndMain, WM_NEW_MESSAGE, (WPARAM)strdup("Error: Failed to decrypt message"), 0);
             }
+        } else if (strncmp(buffer, "PAIRED_WITH", 11) == 0) {
+            sscanf(buffer + 12, "%49s", friendUsername);
+            printf("Paired with user: %s\n", friendUsername);
+            char windowTitle[100];
+            sprintf(windowTitle, "Secure Chat - %s (with %s)", currentUsername, friendUsername);
+            PostMessage(hwndMain, WM_SETTEXT, 0, (LPARAM)windowTitle);
+            char pairedMsg[100];
+            sprintf(pairedMsg, "System: You are now chatting with %s", friendUsername);
+            PostMessage(hwndMain, WM_NEW_MESSAGE, (WPARAM)strdup(pairedMsg), 0);
+        } else if (strcmp(buffer, "WAITING_FOR_PARTNER") == 0) {
+            char *waitingMsg = _strdup("[WAITING] There is no one on the other side to chat with yet!");
+            PostMessage(hwndMain, WM_NEW_MESSAGE, (WPARAM)waitingMsg, 0);
         }
-        
-        // Case 4: Handle any other message types (unsecured messages or non-encrypted)
         else {
-            // Display the raw message (could be a non-encrypted message or something else)
             PostMessage(hwndMain, WM_NEW_MESSAGE, (WPARAM)strdup(buffer), 0);
         }
     }
-    return NULL;  //Exit the function when done
+    return NULL;
 }
 
-
 void sendMessage() {
-    // Retrieve the text input from the input box
     GetWindowText(hwndInputBox, messageBuffer, BUFFER_SIZE);
-    
-    // If the input is empty (no message), return immediately
     if (strlen(messageBuffer) == 0) return;
     
-    //Case 1: If the key exchange has not yet been initiated(we will send the first key)
     if (!keySent && !keyRecieved) {
-        // Prepare the message to send the public key for the DHKE
         char keyMsg[BUFFER_SIZE + DH_KEY_SIZE];
-        
-        //Format the message with "DH_PUBKEY:" prefix
         sprintf(keyMsg, "DH_PUBKEY:");
-        
-        //Copy our public key into the message
         memcpy(keyMsg + 10, publicKey, DH_KEY_SIZE);
-        
-        //Send the message with the public key to the other client to initiate key exchange
         send(client_socket, keyMsg, 10 + DH_KEY_SIZE, 0);
-        
-        //Display a message to the user indicating that a secure connection is being initiated
         addMessage("Initiating secure connection...", 1);
-
-        //Marking key sent as true
         keySent = 1;
-    } 
-    //Case 2: If the key exchange has already been completed
-    else {
-        // Declare an array to hold the encrypted message
+    } else {
         unsigned char encryptedData[BUFFER_SIZE * 2];
-        
-        // Encrypt the message using the shared secret key
         aesEncrypt((unsigned char*)messageBuffer, strlen(messageBuffer), sharedSecret, encryptedData);
         
-        //Calculate the length of the encrypted data (rounded up to the nearest multiple of 16 + 16 for padding)
         int encryptedLen = ((strlen(messageBuffer) / 16) + 1) * 16 + 16;
         
-        //Create a buffer to hold the entire encrypted message with "ENC:" prefix
         char encryptedMsg[BUFFER_SIZE * 2];
-        
-        // Add the "ENC:" prefix to the message to indicate that it's an encrypted message
         strcpy(encryptedMsg, "ENC:");
-        
-        // Copy the encrypted data into the message buffer, right after the "ENC:" prefix
         memcpy(encryptedMsg + 4, encryptedData, encryptedLen);
         
-        //Send the encrypted message
         send(client_socket, encryptedMsg, 4 + encryptedLen, 0);
-        
-        //Display the original (plaintext) message in the chat window
         addMessage(messageBuffer, 1);
     }
     
-    // Clear the input box after the message has been sent
     SetWindowText(hwndInputBox, "");
 }
 
@@ -448,24 +397,43 @@ void addMessage(const char *message, int isSent) {
     char currentText[BUFFER_SIZE * 10] = {0};
     GetWindowText(hwndChatArea, currentText, sizeof(currentText));
 
-    char newText[BUFFER_SIZE * 10];
-    char formattedMessage[BUFFER_SIZE + 50];
+    char newText[BUFFER_SIZE * 10] = {0};
+    char formattedMessage[BUFFER_SIZE + 100] = {0};
+    char tempBuffer[BUFFER_SIZE] = {0};
+    int rightPadding = CalculateRightPadding(hwndChatArea);
+    char* line = strtok((char*)message, "\n");
     
     if (isSent) {
-        sprintf(formattedMessage, "You:\r\n%s", message);
+        sprintf(tempBuffer, "%*sYOU:\r\n", rightPadding, "");
+        strcat(formattedMessage, tempBuffer);
+        while (line != NULL) {
+            sprintf(tempBuffer, "%*s%s\r\n", rightPadding, "", line);
+            strcat(formattedMessage, tempBuffer);
+            line = strtok(NULL, "\n");
+        }
     } else {
-        sprintf(formattedMessage, "Friend:\r\n%s", message);
+        if (friendUsername[0] != '\0') {
+            sprintf(tempBuffer, "%s:\r\n", friendUsername);
+        } else {
+            sprintf(tempBuffer, "FRIEND:\r\n");
+        }
+        strcat(formattedMessage, tempBuffer);
+        
+        while (line != NULL) {
+            strcat(formattedMessage, line);
+            strcat(formattedMessage, "\r\n");
+            line = strtok(NULL, "\n");
+        }
     }
 
     if (strlen(currentText) > 0) {
-        sprintf(newText, "%s\r\n\r\n%s", currentText, formattedMessage);
+        sprintf(newText, "%s%s", currentText, formattedMessage);
     } else {
         strcpy(newText, formattedMessage);
     }
 
     SetWindowText(hwndChatArea, newText);
-    
-    SendMessage(hwndChatArea, EM_SETSEL, 0, -1);
-    SendMessage(hwndChatArea, EM_SETSEL, -1, -1);
+    int textLen = GetWindowTextLength(hwndChatArea);
+    SendMessage(hwndChatArea, EM_SETSEL, textLen, textLen);
     SendMessage(hwndChatArea, EM_SCROLLCARET, 0, 0);
 }

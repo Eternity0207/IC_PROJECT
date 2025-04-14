@@ -14,6 +14,7 @@ typedef struct ClientNode ClientNode;
 
 struct ClientNode {
     SOCKET socket;
+    char username[20];
     char ip[INET6_ADDRSTRLEN];
     SOCKET paired_socket;
     ClientNode *next;
@@ -70,6 +71,7 @@ void add_client(SOCKET socket, const char *ip) {
     new_node->ip[INET6_ADDRSTRLEN - 1] = '\0';
     new_node->paired_socket = INVALID_SOCKET;
     new_node->next = client_list;
+    strcpy(new_node->username, "");
     client_list = new_node;
 
     if (socket > max_fd) {
@@ -84,10 +86,16 @@ void add_client(SOCKET socket, const char *ip) {
         
         first->paired_socket = second->socket;
         second->paired_socket = first->socket;
+        char first_msg[50], second_msg[50];
+        sprintf(first_msg, "PAIRED_WITH %s", second->username);
+        sprintf(second_msg, "PAIRED_WITH %s", first->username);
         
-        send(first->socket, "PAIRED", 7, 0);
-        send(second->socket, "PAIRED", 7, 0);
-        printf("Clients paired: %s and %s\n", first->ip, second->ip);
+        send(first->socket, first_msg, strlen(first_msg), 0);
+        send(second->socket, second_msg, strlen(second_msg), 0);
+        
+        printf("Clients paired: %s (%s) and %s (%s)\n", 
+               first->ip, first->username, 
+               second->ip, second->username);
     } else {
         send(socket, "WAITING_FOR_PARTNER", 20, 0);
     }
@@ -204,6 +212,11 @@ void handle_client_message(SOCKET client_socket, User** users) {
         bool auth_result = verify(*users, username, password);
         printf("Authentication result: %s\n", auth_result ? "SUCCESS" : "FAILURE");
         if (auth_result) {
+            ClientNode *client = find_client_by_socket(client_socket);
+            if (client) {
+                strncpy(client->username, username, sizeof(client->username)-1);
+                client->username[sizeof(client->username)-1] = '\0';
+            }
             send(client_socket, "LOGIN_SUCCESS", 14, 0);
         } else {
             send(client_socket, "LOGIN_FAILED", 13, 0);
@@ -272,7 +285,7 @@ User* load_database(User* existing_head) {
 }
 
 User* create_newUser(const char *username, const char *password) {
-    User *newUser = (User*)malloc(sizeof(User));
+    User newUser = (User)malloc(sizeof(User));
     strncpy(newUser->username, username, sizeof(newUser->username) - 1);
     strncpy(newUser->password, password, sizeof(newUser->password) - 1);
     newUser->username[sizeof(newUser->username) - 1] = '\0';
