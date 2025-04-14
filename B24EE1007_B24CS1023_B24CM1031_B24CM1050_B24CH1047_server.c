@@ -285,7 +285,7 @@ User* load_database(User* existing_head) {
 }
 
 User* create_newUser(const char *username, const char *password) {
-    User newUser = (User)malloc(sizeof(User));
+    User *newUser = (User*)malloc(sizeof(User));
     strncpy(newUser->username, username, sizeof(newUser->username) - 1);
     strncpy(newUser->password, password, sizeof(newUser->password) - 1);
     newUser->username[sizeof(newUser->username) - 1] = '\0';
